@@ -1,0 +1,923 @@
+---
+title: "Family Planning."
+subtitle: "Service Availability & Operational Readiness Report"
+author: "Dr. Ludovick L. Lopa"
+date: "15 November 2026"
+output:
+  html_document:
+    theme:
+      version: 5
+      bg: "#F8FAFC"
+      fg: "#1E293B"
+      primary: "#0D9488"     # Vibrant Teal for main headers & active tabs
+      secondary: "#6366F1"   # Indigo for secondary accents
+      success: "#10B981"     # Emerald Green
+      info: "#0EA5E9"        # Sky Blue
+      warning: "#F59E0B"     # Warm Amber
+      danger: "#F43F5E"      # Coral Red
+      base_font:
+        google: Open Sans
+      heading_font:
+        google: Montserrat
+    toc: true
+    toc_depth: 3
+    toc_float:
+      collapsed: false
+      smooth_scroll: true
+    number_sections: true
+    code_folding: hide
+    df_print: paged
+    self_contained: true
+---
+
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE,      # Hides all R code from the knitted HTML
+  eval = TRUE,       # Runs the code so your figures and tables appear
+  warning = FALSE,   # Hides warning messages
+  message = FALSE    # Hides package loading messages
+)
+```
+
+## Introduction
+
+The family planning readiness assessment covered 12 health facilities across Ukerewe and Buchosa District Councils. It examined service availability, commodities, equipment, functionality, documentation, guidelines and provider training. Findings indicate that facilities generally provide several core family planning methods, particularly condoms, implants and oral contraceptives, but readiness is uneven across methods and councils. 
+
+Important gaps exist in permanent methods, IUCD, female condoms, adolescent-friendly services, and specialized family training. The pattern suggests that service provision is constrained not only by demand, but also by weaknesses in commodity security, infrastructure, clinical tools, documentation and workforce competencies.
+
+```{r package}
+
+#Load packages
+
+if(!require(pacman)) install.packages("pacman")
+pacman::p_load(here, tidyverse, janitor, gtsummary, flextable, inspectdf, scales)
+
+```
+
+
+```{r data}
+#import family planning data
+
+fp_data <- 
+  readxl::read_excel(here("data/fp_dataset.xlsx")) |> 
+  select(council:q1809_06_asrh, -contains("comment"))
+
+```
+
+## Services availability
+
+Service availability is mixed across the 12 facilities, with differences between councils and contraceptive methods. While condoms, implants and oral combined contraceptives are widely available in most facilities, male sterilization and female condoms are unavailable in Buchosa. Non-hormonal IUCD services are only available in three facilies, two in Buchosa and one Ukerewe whereas emergency pills and cycle beads show stronger availability in Ukerewe. Eleven facilities (91.7%) reported offering adolescent-friendly services.
+
+```{r service availability}
+
+#data management
+
+fp_data_clean <-  
+  clean_names(fp_data) |> 
+  mutate(council = 
+           case_when(council == "BUCHOSA" ~ "Buchosa",
+                     council == "UKEREWE DC" ~ "Ukerewe",
+                     TRUE ~ council)) |> 
+  select(-q1802_03_combined_inj) # Tanzania doesn't provide combined contraceptive injections
+  
+
+
+# view(fp_data_clean)
+# summary(fp_data_clean)
+
+
+# Summary of available family planning services
+
+# fp_data_clean |>
+#   select(council,
+#          facility_name,
+#          q1802_01_combined_oc:q1802_12_female_sterilization) |>
+#   inspect_cat() |>
+#   show_plot()
+
+
+# Available family planning services grouped by council 
+services_plot <- 
+  fp_data_clean |>
+  select (council, 
+          Impants =  q1802_07_implants,
+         `IUCD hormonal` = q1802_09a_iucd_hormonal,
+         `IUCD non-hormonal` = q1802_09b_iucd_nonhormonal,
+         `Oral COC` = q1802b_01_combined_oc,
+         `Oral progestin only` = q1802_02_progestin_pill,
+         `Progestin only injections` = q1802_04_progestin_inj,
+         `Male condoms` = q1802_05_male_condom,
+         `Female condoms` = q1802_06_female_condom,
+         `Male sterilization` = q1802_11_male_sterilization,
+         `Female sterilization` = q1802_12_female_sterilization,
+         `Emmergency pills` = q1802b_08_ecp,
+         `Cycle beads` = q1802_10_cycle_beads) |> 
+        
+
+# Change data to long format
+  pivot_longer(
+    cols = -council,
+    names_to = "method",
+    values_to = "status") |>
+  
+# Filter for facilities that actually provide the method
+  filter(status == "yes") |> 
+
+# Count how many facilities in each council provide each method
+  count(council, method) |> 
+  
+# Plot the grouped bar chart
+  ggplot(mapping = aes(x = method, 
+                       y = n, 
+                       fill = council)) +
+  
+  geom_col(position = "dodge") +
+  
+  scale_y_continuous(breaks = 0:6, limits = c(0, 6)) +
+  
+  labs(title = "Figure 1. Availability of family planning services.",
+       subtitle = "A snapshot of Ukerewe and Buchosa Districts (N = 12)",
+       x = "Family planning services",
+       y = "Number of facilities",
+       fill = "District Council") +
+  
+  theme_classic() +
+  coord_flip() +
+  theme(
+    plot.title = element_text(face = "bold"),
+    axis.title = element_text(face = "bold")
+  )
+
+# Display the chart
+services_plot
+
+
+# Save the figure in the output folder
+ggsave(
+  filename = "available_fp_services.jpg",
+  plot = services_plot,
+  path = "output",
+  width = 8,
+  height = 6,
+  units = "in",
+  dpi = 300
+)
+
+
+```
+
+```{r adolescent friendly services}
+
+# Calculate percentages and label positions
+
+pie_data <- fp_data_clean %>%
+  mutate(q1803_adolescents = 
+           case_when(q1803_adolescents == "yes" ~ "Available",
+                     q1803_adolescents == "no" ~ "Not available",
+                     TRUE ~ q1803_adolescents)) |> 
+  count(q1803_adolescents) %>%
+  mutate(
+    percentage = round(n / sum(n) * 100, 1),
+    label = paste0(percentage, "%")
+  )
+
+# Build the pie chart
+
+adolescent_plot <- 
+ggplot(
+  pie_data,
+  aes(x = 2, y = n, 
+      fill = q1803_adolescents)) +
+  
+  geom_col(
+    width = 1,
+    color = "white",
+    linewidth = 1) +
+  
+  coord_polar(theta = "y") +
+  
+  geom_text(
+    aes(label = label),
+    position = position_stack(vjust = 0.5),
+    color = "white",
+    fontface = "bold",
+    size = 4)+
+  
+  xlim(0.5, 2.5) +
+  
+  scale_fill_brewer(
+    palette = "Dark2",
+    name = "Service") +
+  
+  labs(
+    title = "Figure 2. Access to adolescent-friendly family planning services",
+    subtitle = "(N = 12)") +
+  theme_void() +
+  
+  theme(
+    plot.title = element_text(
+      hjust = 0.5,
+      face = "bold",
+      size = 13),
+    
+    legend.title = element_text(
+      face = "bold",
+      size = 10),
+    
+    legend.text = element_text(
+      size = 10),
+    
+    legend.position = "right")
+
+
+# Display the chart
+adolescent_plot
+
+# Save the figure in the output folder
+ggsave(
+  filename = "adolescent_services.jpg",
+  plot = adolescent_plot,
+  path = "output",
+  width = 8,
+  height = 6,
+  dpi = 300
+)
+
+```
+
+## Supplies and commodities
+
+Commodity availability mirrors service availability, indicating that some service gaps are directly linked to commodity readiness. Male condoms and implants are available in 12 facilities, while oral combined contraceptives and oral progestin-only methods are more available in Ukerewe than Buchosa. Non-hormonal IUCD commodities are present in one facility in each council. Female condoms are absent in Buchosa and available in two Ukerewe facilities. Male sterilization kits are available in one Ukerewe facility and absent in Buchosa. Emergency pills and cycle beads are more available in Ukerewe. These findings suggest inequitable commodity distribution and limitations in method choice, continuity and contraceptive decision-making.
+
+
+```{r commodities}
+
+ # fp_data_clean |>
+ #  select(q1802b_01_combined_oc:q1802b_12_female_sterilization) |>
+ #  inspect_cat() |>
+ #  show_plot()
+
+
+# Available family planning services grouped by council 
+commodities_plot_data <- 
+  fp_data_clean |>
+  select(
+    council, 
+    `Implants` = q1802_07_implants,
+    `IUCD hormonal` = q1802b_09a_iucd_hormonal,
+    `IUCD non-hormonal` = q1802_09b_iucd_nonhormonal,
+    `Oral COC` = q1802b_01_combined_oc,
+    `Oral progestin only` = q1802b_02_progestin_pill,
+    `Progestin only injections` = q1802b_04_progestin_inj,
+    `Male condoms` = q1802b_05_male_condom,
+    `Female condoms` = q1802b_06_female_condom,
+    `Male sterilization kit` = q1802b_11_male_sterilization,
+    `Female sterilization kit` = q1802b_12_female_sterilization,
+    `Emergency pills` = q1802b_08_ecp,
+    `Cycle beads` = q1802_10_cycle_beads) |>
+  
+  #change all 'NA' to "no"
+  
+  mutate(across
+         (-council,
+           ~ replace_na(as.character(.), "no"))) 
+
+###########################################################################################
+### NOTE: There was a skip pattern in data collection tool 
+### If services were not offered, tool assumed no equipment was available. 
+### Consequently, some indicators had "NA" in equipment questions.      
+###########################################################################################
+
+
+
+# Change data to long format
+  
+commodities_plot <- 
+commodities_plot_data |> 
+  pivot_longer(
+    cols = -council,
+    names_to = "method",
+    values_to = "status") |>
+  
+# Filter for facilities that actually provide the method
+  filter(status == "yes") |> 
+
+# Count how many facilities in each council provide each method
+  count(council, method) |> 
+  
+# Plot the grouped bar chart
+  ggplot(mapping = aes(x = method, 
+                       y = n, 
+                       fill = council)) +
+  
+  geom_col(position = "dodge") +
+  
+  scale_y_continuous(breaks = 0:6, limits = c(0, 6)) +
+  
+  labs(title = "Figure 3. Availability of family planning commodities.",
+       subtitle = "(N = 12)",
+       x = "Family Planning Commodity",
+       y = "Number of facilities",
+       fill = "District Council") +
+  
+  theme_classic() +
+  coord_flip() +
+  theme(
+    plot.title = element_text(face = "bold"),
+    axis.title = element_text(face = "bold")
+  )
+
+# Display the chart
+commodities_plot
+
+# Save the figure in the output folder
+ggsave(
+  filename = "commodities.jpg",
+  plot = commodities_plot,
+  path = "output",
+  width = 8,
+  height = 6,
+  units = "in",
+  dpi = 300
+)
+
+
+```
+
+## Equipment 
+
+### Availability
+
+Essential equipment availability presents a significant readiness constraint. Examination beds are relatively well covered, observed in 92% of facilities, while sponge-holding forceps and gallipots/kidney dishes are available in 75%. Tenaculum forceps, speculums, curved scissors, body scales and height boards are available in 67% of facilities. Uterine sounds and blood-pressure machines are available in 58%, while scalpels and examination lamps are present in half of facilities. Thermometers have the lowest availability at 42%. These gaps are important for IUD insertion, client assessment, infection prevention and safe service delivery. Equipment shortages therefore remain a practical barrier to comprehensive family planning readiness.
+
+```{r availability}
+
+# fp_data_clean |>
+#   select(availability_of_bp_machine:availability_of_scalpel, 
+#          -contains("function")) |> 
+#   inspect_cat() |> 
+#   show_plot()
+
+# Select and rename the equipment variables cleanly
+equip_plot_data <- 
+  fp_data_clean |>
+  select(
+    `Body scale & height board` = q1806_02_scale_height_board_available,
+    `BP machine`                = q1806_01_blood_pressure_apparatus_available,
+    `Curved scissors`           = q1806_11_curved_scissors_available,
+    `Examination bed`           = q1806_04_examination_bed_available,
+    `Examination lamp`          = q1806_05_examination_lamp_available,
+    `Gallipot / kidney dish`    = q1806_10_gallipot_kidney_dish_available,
+    `Scalpel`                   = q1806_12_scalpel_available,
+    `Speculum`                  = q1806_06_speculum_available,
+    `Sponge holding forceps`    = q1806_09_sponge_holding_forceps_available,
+    `Tenaculum forceps`         = q1806_08_tenaculum_forceps_available,
+    `Thermometer`               = q1806_03_thermometer_available,
+    `Uterine sound`             = q1806_07_uterine_sound_available) |>
+  
+   
+  # Change all 'NA' and "reported_not seen" to "not_available"
+  
+mutate(
+  across(
+    everything(),
+    ~ case_when(
+        is.na(.) ~ "not_available",
+        . == "reported_not_seen" ~ "not_available",
+        TRUE ~ as.character(.)
+      )
+  )
+) |> 
+  
+  
+  # Pivot to long format
+pivot_longer(
+    cols = everything(),
+    names_to = "equipment",
+    values_to = "status") |>
+  filter(!is.na(status)) |>
+  
+  mutate(
+  status = case_when(
+    status == "observed" ~ "Observed",
+    status == "not_available" ~ "Not available",
+    TRUE ~ status)) |> 
+  
+  # Calculate counts and percentages per equipment
+  count(equipment, status) |>
+  group_by(equipment) |>
+  mutate(
+    pct = n / sum(n) * 100,
+    
+    # Make "Not available" negative so it diverges to the left
+    diverging_pct = if_else(status == "Observed", pct, -pct),
+    
+    # Create clean percentage labels
+    label_text = paste0(round(pct, 0), "%"),
+    
+    # Helper column to sort bars from highest to lowest "Observed" %
+    observed_pct = sum(pct[status == "Observed"])) |> 
+  
+  ungroup()
+
+# 4. Plot the diverging bar chart
+
+equipment_plot <- 
+  ggplot(equip_plot_data, 
+         aes(x = reorder(equipment, observed_pct),
+             y = diverging_pct,
+             fill = factor(status, levels = c("Not available", "Observed")))) +
+  
+  geom_col(width = 0.7) +
+  
+  # Add vertical center line at 0%
+  geom_hline(yintercept = 0, color = "gray30", linewidth = 0.6) +
+  
+  # Add percentage labels inside/next to bars
+  geom_text(
+    aes(
+      label = label_text,
+      hjust = if_else(status == "Observed", -0.2, 1.2)
+    ),
+    size = 3.5,
+    fontface = "bold",
+    color = "gray20"
+  ) +
+  
+  # Format x-axis (flipped) to show positive percentages on both sides
+  scale_y_continuous(
+    limits = c(-105, 115),
+    breaks = seq(-100, 100, 25),
+    labels = function(x) paste0(abs(x), "%")
+  ) +
+  
+  # Use a clean, accessible two-color palette
+  scale_fill_manual(
+    values = c("Not available" = "#E07A5F", "Observed" = "#2A9D8F"),
+    name = "Availability Status"
+  ) +
+  
+  coord_flip() +
+  
+  labs(
+    title = "Figure 4. Availability of Essential Medical Equipment",
+    subtitle = "% of facilities where equipment was observed versus not available",
+    x = NULL,
+    y = "Percentage of Facilities"
+  ) +
+  
+  theme_classic() +
+  theme(
+    plot.title = element_text(face = "bold", size = 13),
+    plot.subtitle = element_text(color = "gray40", size = 10),
+    axis.text.y = element_text(size = 10, color = "black"),
+    axis.title = element_text(face = "bold"),
+    legend.position = "top",
+    panel.grid.major.x = element_line(color = "gray90", linetype = "dashed")
+  )
+
+# Display the chart
+equipment_plot
+
+# Save the figure in the output folder
+ggsave(
+  filename = "equipment.jpg",
+  plot = equipment_plot,
+  path = "output",
+  width = 8,
+  height = 6,
+  units = "in",
+  dpi = 300
+)
+
+
+```
+
+### Functionality
+
+Functionality among available equipment was strong, suggesting that the main challenge is procurement or distribution rather than widespread equipment failure. Uterine sounds, thermometers, tenaculum forceps, sponge-holding forceps, speculums, gallipots/kidney dishes, examination beds, curved scissors and blood-pressure machines were 100% functional among assessed items. However, body scales and height boards were 88% functional, while examination lamps were only 67% functional. The distinction between availability and functionality is important: even when equipment works, it cannot support services if it is absent. Priority should therefore be given to closing availability gaps while maintaining maintenance systems. This highlights need for planned equipment maintenance.
+
+```{r functionality}
+
+
+functionality_data <- 
+fp_data_clean |>
+  select(q1806_01_blood_pressure_apparatus_available:q1806_12_scalpel_functional, 
+         -contains("_available")) |> 
+  rename (
+    `Body scale & height board` = q1806_02_scale_height_board_functional,
+    `BP machine`                = q1806_01_blood_pressure_apparatus_functional,
+    `Curved scissors`           = q1806_11_curved_scissors_functional,
+    `Examination bed`           = q1806_04_examination_bed_functional,
+    `Examination lamp`          = q1806_05_examination_lamp_functional,
+    `Gallipot / kidney dish`    = q1806_10_gallipot_kidney_dish_functional,
+    `Scalpel`                   = q1806_12_scalpel_functional,
+    `Speculum`                  = q1806_06_speculum_functional,
+    `Sponge holding forceps`    = q1806_09_sponge_holding_forceps_functional,
+    `Tenaculum forceps`         = q1806_08_tenaculum_forceps_functional,,
+    `Thermometer`               = q1806_03_thermometer_functional,
+    `Uterine sound`             = q1806_07_uterine_sound_functional) |> 
+  
+  
+  pivot_longer(
+    cols = everything(),
+    names_to = "item",
+    values_to = "status") |> 
+  filter(!is.na(status))
+
+
+# Clean labels, calculate percentages, and sort by functional rate
+plot_data <- 
+  functionality_data |>
+  mutate(
+    
+    # Change "Yes" -> "Functional" and "No" -> "Non-functional"
+    status = factor(
+      status,
+      levels = c("yes", "no"),
+      labels = c("Functional", "Non-functional")
+    )
+  ) |>
+  count(item, status) |>
+  group_by(item) |>
+  mutate(
+    total = sum(n),
+    pct = n / total,
+    
+    # Add sample size (n) to the label since NAs were dropped
+    item_label = paste0(item, " (n=", total, ")"),
+    
+    # Capture the percentage of "Functional" to sort bars cleanly
+    sort_val = pct[status == "Functional"][1]
+  ) |>
+  ungroup() |>
+  mutate(sort_val = ifelse(is.na(sort_val), 0, sort_val))
+
+# Create the horizontal stacked bar chart
+functionality_plot <- 
+ggplot(plot_data, aes(x = pct, 
+                      y = reorder(item_label, sort_val), fill = status)) +
+  geom_col(width = 0.72, color = "white", linewidth = 0.3) +
+  geom_text(
+    aes(label = ifelse(pct >= 0.06, percent(pct, accuracy = 1), "")),
+    position = position_stack(vjust = 0.5),
+    color = "white",
+    fontface = "bold",
+    size = 3.3
+  ) +
+  scale_x_continuous(
+    labels = percent_format(),
+    expand = expansion(mult = c(0, 0.02))
+  ) +
+  scale_fill_brewer(palette = "Set2") +
+  labs(
+    title = "Figure 5. Operational Status of Available Medical Equipment",
+    subtitle = "Proportion of functional versus non-functional items",
+    x = "Percentage out of assessed Equipment",
+    y = NULL,
+    fill = "Status"
+  ) +
+  theme_minimal(base_size = 10) +
+  theme(
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor = element_blank(),
+    legend.position = "top",
+    plot.title = element_text(face = "bold")
+  )
+
+# Display the chart
+functionality_plot
+
+
+# Save the figure in the output folder
+ggsave(
+  filename = "functionality.jpg",
+  plot = functionality_plot,
+  path = "output",
+  width = 8,
+  height = 6,
+  units = "in",
+  dpi = 300
+)
+
+
+```
+
+## Guidelines and Medical Records
+
+Documentation and guideline readiness is uneven. Client records/files are available in 92% of facilities and checklists/job aids in 67%, indicating stronger foundation for recording and supporting service delivery. However, the national family planning guideline is observed in 42% of facilities, while other family planning guidelines are available in 25%. Adolescent reproductive health guidance is particularly weak: both national and adolescent reproductive guidelines are observed in only 8% of facilities. This creates a risk that providers may deliver services without consistent access to standards, for adolescents and care. Guideline availability and use should therefore be strengthened alongside documentation quality.
+
+
+```{r}
+
+# 1. Select HMIS and guideline columns
+hmis_data <- 
+  fp_data_clean |> 
+  select(
+    q1808_01_national_fp_guidelines_available:
+      q1808_06_client_records_available
+  )
+
+
+# 2. Rename and clean variables
+hmis_plot_data <- 
+  hmis_data |>
+  select(
+    `Checklist/Job aids` = q1808_03_fp_checklist_job_aids_available,
+    `National family planning\n guideline` = 
+      q1808_01_national_fp_guidelines_available,
+    `Other family planning\n guideline` = 
+      q1808_02_other_fp_guidelines_available,
+    `National adolescent\n reproductive guideline` = 
+      q1808_04_national_adolescent_guidelines_available,
+    `Other adolescent\n reproductive guidelines` =
+      q1808_05_other_adolescent_guidelines_available,
+    `Clients' records/files` = q1808_06_client_records_available
+  ) |>
+
+  # Replace NA and reported_not_seen
+  mutate(
+    across(
+      everything(),
+      ~ case_when(
+        is.na(.) ~ "not_available",
+        as.character(.) == "reported_not_seen" ~ "not_available",
+        TRUE ~ as.character(.)
+      )
+    )
+  ) |>
+
+  # 3. Reshape to long format
+  pivot_longer(
+    cols = everything(),
+    names_to = "hmis",
+    values_to = "status"
+  ) |>
+
+  # 4. Standardise response categories
+  mutate(
+    status = case_when(
+      status == "observed" ~ "Observed",
+      status == "not_available" ~ "Not available",
+      TRUE ~ NA_character_
+    )
+  ) |>
+  filter(!is.na(status)) |>
+
+  # 5. Calculate counts and percentages
+  count(hmis, status) |>
+  group_by(hmis) |>
+  mutate(
+    pct = n / sum(n) * 100,
+
+    diverging_pct = if_else(
+      status == "Observed",
+      pct,
+      -pct
+    ),
+
+    label_text = paste0(round(pct), "%"),
+
+    observed_pct = sum(
+      pct[status == "Observed"],
+      na.rm = TRUE
+    )
+  ) |>
+  ungroup()
+
+
+# 6. Plot diverging bar chart
+hmis_plot <- 
+  ggplot(
+    hmis_plot_data,
+    aes(
+      x = reorder(hmis, observed_pct),
+      y = diverging_pct,
+      fill = factor(
+        status,
+        levels = c("Not available", "Observed")
+      )
+    )
+  ) +
+
+  geom_col(width = 0.7) +
+
+  geom_hline(
+    yintercept = 0,
+    color = "gray30",
+    linewidth = 0.6
+  ) +
+
+  geom_text(
+    aes(
+      label = label_text,
+      hjust = if_else(
+        status == "Observed",
+        -0.2,
+        1.2
+      )
+    ),
+    size = 3.5,
+    fontface = "bold",
+    color = "gray20"
+  ) +
+
+  scale_y_continuous(
+    limits = c(-105, 115),
+    breaks = seq(-100, 100, 25),
+    labels = function(x) paste0(abs(x), "%")
+  ) +
+
+  scale_fill_manual(
+    values = c(
+      "Not available" = "#E07A5F",
+      "Observed" = "#2A9D8F"
+    ),
+    name = "Availability Status"
+  ) +
+
+  coord_flip(clip = "off") +
+
+  labs(
+    title = "Figure 6. Availability of HMIS Tools and Clinical Guidelines",
+    subtitle = "% of facilities with observed vs. unavailable tools and guidelines",
+    x = NULL,
+    y = "Percentage of Facilities"
+  ) +
+
+  theme_classic() +
+
+  theme(
+    plot.title = element_text(face = "bold", size = 13),
+    plot.subtitle = element_text(color = "gray40", size = 10),
+    axis.title = element_text(face = "bold"),
+    axis.text.y = element_text(size = 10, color = "black"),
+    legend.position = "top",
+    panel.grid.major.x = element_line(
+      color = "gray90",
+      linetype = "dashed"
+    ),
+    plot.margin = margin(10, 20, 10, 10)
+  )
+
+
+# 7. Display chart
+hmis_plot
+
+
+# 8. Save figure
+ggsave(
+  filename = "hmis.jpg",
+  plot = hmis_plot,
+  path = "output",
+  width = 8,
+  height = 6,
+  units = "in",
+  dpi = 300,
+  bg = "white"
+)
+
+```
+
+
+## Family Planning Training
+
+Training gaps emerged as a major weakness in facility readiness to provide family planning services. In Buchosa, all six facilities (100%) reported no training in hormonal and non-hormonal IUDs, implants, and adolescent-friendly services in the past two years. For permanent family planning methods, including male and female sterilization, five of the six facilities (83%) lacked recent training, with only one facility reporting to have received capacity building in these areas. The situation was more pronounced in Ukerewe, where all six facilities (100%) lacked recent training across all six assessed areas, including IUDs, implants, adolescent-friendly services, and male and female sterilization. 
+
+These findings indicate that service and commodity availability may not translate into provision where specialized skills are required. The training pattern also limits method choice, particularly for adolescents and clients seeking permanent or IUD methods. A competency-based, training and mentorship plan is therefore essential.
+
+
+```{r trainings}
+
+# Select relevant columns
+training_data <- 
+  fp_data_clean |> 
+  select(
+    council, 
+    q1809_01_iucd_hormonal:q1809_06_asrh)
+
+# Rename, pivot, calculate percentages before filtering, and plot
+training_gaps_plot <- 
+  training_data |>
+  rename(
+    `IUCD hormonal training` = q1809_01_iucd_hormonal,
+    
+    `IUCD non-hormonal training` = q1809_02_iucd_nonhormonal,
+    
+    `Male sterilization training` = q1809_03_male_sterilization,
+    
+    `Female sterilization training` = q1809_04_female_sterilization,
+    
+    `Adolescent friendly services training` = q1809_06_asrh,
+    
+    `Implant training` = q1809_05_implants
+  ) |> 
+  
+  # Reshape to long format
+  pivot_longer(
+    cols = -council,
+    names_to = "training",
+    values_to = "status"
+  ) |>
+  filter(!is.na(status)) |>
+  
+  # Calculate counts and percentages BEFORE filtering to "No"
+  count(council, training, status) |>
+  group_by(council, training) |>
+  mutate(
+    total = sum(n),
+    pct = n / total,
+    # Create clean label showing both percentage and fraction: e.g., "83% (5/6)"
+    bar_label = paste0(round(pct * 100, 0), "% (", n, "/", total, ")")
+  ) |>
+  ungroup() |>
+  
+  # Now keep only facilities that lacked training ("No")
+  filter(status == "no") |> 
+  
+  # Plot the grouped percentage bar chart
+  ggplot(mapping = aes(x = reorder(training, pct), y = pct, fill = council)) +
+  geom_col(position = position_dodge(width = 0.78), width = 0.7) +
+  
+  # Add direct percentage and count labels next to each bar
+  geom_text(
+    aes(label = bar_label),
+    position = position_dodge(width = 0.78),
+    hjust = -0.1,
+    size = 3.2,
+    fontface = "bold",
+    color = "gray20"
+  ) +
+  
+  scale_y_continuous(
+    labels = percent_format(),
+    limits = c(0, 1.22), # Extra room on right for text labels
+    breaks = seq(0, 1, 0.25),
+    expand = expansion(mult = c(0, 0.02))
+  ) +
+  
+  scale_fill_manual(
+    values = c("Buchosa" = "#E07A5F", "Ukerewe" = "#2A9D8F")
+  ) +
+  
+  labs(
+    title = "Figure 7. Family Planning Training Gaps by District Council",
+    subtitle = "% of facilities lacking training in the past 2 years",
+    x = NULL, 
+    y = "Percentage of Facilities",
+    fill = "District Council"
+  ) +
+  
+  coord_flip() +
+  theme_classic(base_size = 11) +
+  theme(
+    plot.title = element_text(face = "bold"),
+    plot.subtitle = element_text(color = "gray40"),
+    axis.title = element_text(face = "bold"),
+    legend.position = "top",
+    panel.grid.major.x = element_line(color = "gray90", linetype = "dashed")
+  )
+
+# Display the chart
+training_gaps_plot 
+
+
+# Save the figure in the output folder
+ggsave(
+  filename = "training_gaps.jpg",
+  plot = training_gaps_plot,
+  path = "output",
+  width = 8,
+  height = 6,
+  units = "in",
+  dpi = 300
+)
+
+
+```
+
+## Discussion
+
+Overall, the assessment demonstrates that family planning readiness is multidimensional and cannot be judged by service availability alone. Facilities may have commodities or functioning equipment while lacking the full package required for safe, informed and equitable care. Ukerewe generally shows broader availability for several services and commodities, whereas Buchosa has gaps. Across both councils, IUD services, permanent methods, adolescent-friendly care, guidelines and provider training require attention. The contrast between high functionality of available equipment and low equipment availability suggests supply and distribution weaknesses. Strengthening readiness should therefore combine commodity and equipment systems with clinical capacity, standards, documentation and supportive supervision.
+
+
+## Recommendations
+
+The health system should prioritize a readiness improvement plan with clear responsibilities, timelines and monitoring indicators across the following strategic areas:
+
+* Quantification and redistribution/procurement of family planning commodities and equipment, prioritizing IUCDs supplies, sterilization kits, examination lamps, thermometers, uterine sounds and blood-pressure machines. 
+
+* Competency-based training and mentorship for IUCDs insertion, implants, permanent methods and adolescent-friendly services. 
+
+* Ensure every facility has current national family planning and adolescent reproductive health guidelines, checklists and job aids. 
+
+* Strengthen stock monitoring, equipment maintenance and supportive supervision. 
+
+* Review progress quarterly using readiness indicators and address gaps at facility level through R/CHMT supervisions.
+
+
+## Conclusion
+
+The assessment shows that family planning readiness across the 12 facilities is partial. Core methods such as implants, male condoms and oral contraceptives are established, but access to IUCDs, permanent methods and female condoms remains limited. Commodity gaps correspond with service gaps, while equipment availability is weaker than equipment functionality. Documentation is stronger than access to clinical and adolescent guidelines, and training gaps are widespread. These findings point to health system constraints that require coordinated action rather than isolated interventions. Improving commodity security, equipment availability, provider competence, guideline access and supportive supervision will be critical to achieving equitable and quality family planning services
